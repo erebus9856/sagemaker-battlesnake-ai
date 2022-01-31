@@ -24,18 +24,18 @@ Parameters:
   S3BucketName:
     Description: Enter the name of the S3 bucket for the solution
     Type: String
-    Default: "snake-bucket"
+    Default: "dnblak" ######################################################################################################################################## DEV SET snake-bucket
   SnakeColor:
-    Description: "Hexa RGB color of the snake"
-    Default: "#128a7a"
+    Description: "Hex RGB color of the snake"
+    Default: "#FF5EEA" ######################################################################################################################################## DEV SET 
     Type: String
   SnakeHead:
-    Description: "Snake head : evil, fang, pixel, safe, ... (see: https://docs.battlesnake.com/references/personalization)"
-    Default: bendr
+    Description: "Snake head : evil, fang, pixel, safe, ... (see: https://play.battlesnake.com/references/customizations/)"
+    Default: smart-caterpillar ######################################################################################################################################## DEV SET evil
     Type: String
   SnakeTail:
-    Description: "Snake tail : sharp, pixel, bolt, curled, ... (see: https://docs.battlesnake.com/references/personalization)"
-    Default: freckled
+    Description: "Snake tail : sharp, pixel, bolt, curled, ... (see: https://play.battlesnake.com/references/customizations/)"
+    Default: mouse ######################################################################################################################################## DEV SET curled
     Type: String
   SagemakerTrainingInstanceType:
     Description: "Instance type used for the training. t2 is default because this is the only instance that can be launch in a new AWS account just after creation. m5 or m4 are in the free tiers, choose them if your account exist for some time already"
@@ -51,7 +51,7 @@ Parameters:
     AllowedValues: 
       - 'true'
       - 'false'
-    Default: 'false'
+    Default: 'true'  ######################################################################################################################################## DEV SET false
   SolutionName:
     Description: |
       Prefix for the solution name. Needs to be sagemaker-battlesnake-ai
@@ -66,7 +66,7 @@ Parameters:
       Use 'release' version unless you are customizing the 
       CloudFormation templates and solution artifacts.
     Type: String
-    Default: release
+    Default: development ######################################################################################################################################## DEV SET release
     AllowedValues: 
       - release
       - development
@@ -74,7 +74,7 @@ Parameters:
 Mappings: 
   SolutionsS3BucketNamePrefix: 
     development: 
-      Prefix: sagemaker-solutions-devo
+      Prefix: dnblak-dev1 ######################################################################################################################################## DEV SET 
     release: 
       Prefix: sagemaker-solutions-prod    
   SageMakerInferenceInstanceTypeRegion:
@@ -271,10 +271,6 @@ Outputs:
   SnakeAPI:
     Description: "Use this URL on the Battlesnake platform"
     Value: !GetAtt EndpointStack.Outputs.SnakeAPI
-    
-  CheckSnakeStatus:
-    Description: "Check the snake status. If you see 'ready' you can use the snake"
-    Value: !GetAtt EndpointStack.Outputs.CheckSnakeStatus
     
   S3Bucket:
     Description: "Name of the S3 bucket"

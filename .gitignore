@@ -114,3 +114,10 @@ venv.bak/
 # mypy
 .mypy_cache/
 LocalEnv/
+
+
+
+
+## FOR MY LOCAL DEV
+model-complete.tar.gz
+

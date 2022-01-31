@@ -1,0 +1,371 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "(SA0001) - sagemaker-battlesnake-ai: Solution for training and deploying a Battlesnake AI using Amazon SageMaker Studio. Version 1"
+
+Parameters:
+  SolutionPrefix:
+    Type: String
+  SageMakerIamRoleArn:
+    Type: String
+  S3BucketName:
+    Type: String
+  SagemakerTrainingInstanceType:
+    Type: String
+  SagemakerInferenceInstanceType:
+    Type: String
+  SagemakerEndPointName:
+    Type: String
+  SolutionsS3BucketNamePrefix:
+    Type: String
+  SolutionName:
+    Type: String
+  SnakeAPI:
+    Type: String
+    Default: tmp
+
+  VPCName:
+    Description: 'VPC Name'
+    Type: String
+    Default: 'LabVPC'
+  VPCCIDR:
+    Description: 'CIDR Block for VPC'
+    Type: String
+    Default: 10.0.0.0/16
+  PubSub1:
+    Description: 'Public Subnet 1'
+    Type: String
+    Default: 10.0.1.0/24
+  PubSub2:
+    Description: 'Public Subnet 2'
+    Type: String
+    Default: 10.0.2.0/24
+
+  UserProfileName:
+    Type: String
+    Default: SageMakerStudioUser
+
+
+# Delete the regions that you are not setting the lab to launch in from the list.
+Mappings: 
+  RegionMap: 
+    us-east-1: 
+      datascience: "arn:aws:sagemaker:us-east-1:081325390199:image/datascience-1.0"
+      datawrangler: "arn:aws:sagemaker:us-east-1:663277389841:image/sagemaker-data-wrangler-1.0"
+    us-west-2: 
+      datascience: "arn:aws:sagemaker:us-west-2:236514542706:image/datascience-1.0"
+      datawrangler: "arn:aws:sagemaker:us-west-2:174368400705:image/sagemaker-data-wrangler-1.0"
+      pytorch: "arn:aws:sagemaker:us-west-2:787968894560:image/sagemaker-jumpstart-pytorch-1.0"
+      tensorflow: "arn:aws:sagemaker:us-west-2:787968894560:image/sagemaker-jumpstart-tensorflow-1.0"
+      mxnet16CPU: "arn:aws:sagemaker:us-west-2:236514542706:image/mxnet-1.6-cpu-py36"
+      mxnet18CPU: "arn:aws:sagemaker:us-west-2:236514542706:image/mxnet-1.8-cpu-py37-ubuntu16.04-v1"
+
+
+
+Resources:
+
+  ######################################
+  ### START Networking Section START ###
+  ######################################
+  # Defining the VPC Used for this lab, it contains one public subnet
+  labVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: True
+      EnableDnsHostnames: True
+      Tags:
+        - Key: Name
+          Value: !Ref VPCName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: labVPC-IGW
+
+  # Attached this IGW to the VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref labVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Create public subnets.
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref labVPC
+      CidrBlock: !Ref PubSub1
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Reach
+          Value: Public
+        - Key: Name
+          Value: !Sub ${VPCName} Public Subnet 1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref labVPC
+      CidrBlock: !Ref PubSub2
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Reach
+          Value: Public
+        - Key: Name
+          Value: !Sub ${VPCName} Public Subnet 2
+
+  # Create the Public Routing Tables.
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    # DependsOn:
+    #   - AttachGateway
+    Properties:
+      VpcId: !Ref labVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${VPCName} PublicRouteTable
+
+  # And add in the default route for the IGW to 0.0.0.0/0
+  PublicRouteIGW:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Attach the routing table to each of the subnets
+  PublicRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  SageMakerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: security group for SageMaker notebook instance, training jobs and hosting endpoint
+      VpcId: !Ref labVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${VPCName}-SageMakerSecurityGroup
+
+  SageMakerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: '-1'
+      GroupId: !Ref SageMakerSecurityGroup
+      SourceSecurityGroupId: !Ref SageMakerSecurityGroup
+
+  ###########################################
+  ### START SageMakerStudio Section START ###
+  ###########################################
+  SageMakerStudioDomainRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: sagemaker.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+
+  SageMakerStudioUserRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: sagemaker.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: AllowAccessPolicy
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - sagemaker:CreateEndpointConfig
+                Resource: 
+                  - !Sub arn:aws:sagemaker:*:${AWS::AccountId}:endpoint-config/*
+                Condition:
+                  ForAllValues:StringLike:
+                    sagemaker:InstanceTypes:
+                      - ml.t3.large
+                      - ml.t3.medium
+                      - ml.t3.xlarge
+                      - ml.m4.xlarge
+
+  SageMakerStudioDomain:
+    Type: AWS::SageMaker::Domain
+    Properties:
+      AuthMode: IAM
+      AppNetworkAccessType: VpcOnly
+      DefaultUserSettings:
+        ExecutionRole: !GetAtt SageMakerStudioDomainRole.Arn
+        SecurityGroups: 
+          - !Ref SageMakerSecurityGroup
+      DomainName: 'ArchitectingMLSolutions'
+      VpcId: !Ref labVPC
+      SubnetIds: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Tags:
+        - Key: ProjectName
+          Value: 'MLU-Projects'
+
+  SageMakerStudioUserProfile:
+    Type: AWS::SageMaker::UserProfile
+    Properties: 
+      DomainId: !GetAtt SageMakerStudioDomain.DomainId
+      UserProfileName: !Ref UserProfileName
+      UserSettings:
+        ExecutionRole: !GetAtt SageMakerStudioUserRole.Arn
+        SecurityGroups: 
+          - !Ref SageMakerSecurityGroup
+      Tags:
+        - Key: ProjectName
+          Value: 'MLU-Projects'
+
+  SageMakerStudioDefaultApp:
+    Type: AWS::SageMaker::App
+    DependsOn: SageMakerStudioUserProfile
+    Properties: 
+      AppName: 'default'
+      AppType: JupyterServer
+      DomainId: !GetAtt SageMakerStudioDomain.DomainId
+      UserProfileName: !Ref UserProfileName
+
+  SageMakerStudioNotebookApp:
+    Type: AWS::SageMaker::App
+    DependsOn: SageMakerStudioUserProfile
+    Properties: 
+      AppName: 'Notebook'
+      AppType: KernelGateway
+      DomainId: !GetAtt SageMakerStudioDomain.DomainId
+      UserProfileName: !Ref UserProfileName
+      ResourceSpec: 
+        InstanceType:  ml.t3.medium
+        SageMakerImageArn: !FindInMap
+          - RegionMap
+          - !Ref 'AWS::Region'
+          - tensorflow
+
+  #######################################
+  ### END SageMakerStudio Section END ###
+  #######################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  # NotebookInstance:
+  #   Type: AWS::SageMaker::NotebookInstance
+  #   Properties:
+  #     DirectInternetAccess: Enabled
+  #     InstanceType: ml.t3.medium
+  #     LifecycleConfigName: !GetAtt LifeCycleConfig.NotebookInstanceLifecycleConfigName
+  #     NotebookInstanceName: !Sub "${SolutionPrefix}-battlesnake-nb"
+  #     RoleArn: !Sub "${SageMakerIamRoleArn}"
+  #     VolumeSizeInGB: 14
+  #     Tags:
+  #       - Key: app
+  #         Value: battlesnake
+  #   Metadata:
+  #     cfn_nag:
+  #       rules_to_suppress:
+  #         - id: W1201
+  #           reason: Solution does not have KMS encryption enabled by default
+
+  # LifeCycleConfig:
+  #   Type: AWS::SageMaker::NotebookInstanceLifecycleConfig
+  #   Properties:
+  #     OnStart:
+  #       - Content:
+  #           Fn::Base64: !Sub |
+  #             cd /home/ec2-user/SageMaker
+  #             sudo -u ec2-user -i <<EOF
+              
+  #             source /home/ec2-user/anaconda3/bin/activate tensorflow_p36
+
+  #             pip install --upgrade pip==20.1.1
+  #             pip install -r /home/ec2-user/SageMaker/RLlibEnv/requirements.txt
+  #             rm -rf src/package.egg-info
+  #             EOF
+  #     OnCreate:
+  #       - Content:
+  #           Fn::Base64: !Sub |
+  #             set -e
+  #             sudo -u ec2-user -i <<EOF
+
+  #             cd /home/ec2-user/SageMaker
+  #             aws s3 cp s3://${SolutionsS3BucketNamePrefix}-${AWS::Region}/${SolutionName}/source/ . --recursive
+              
+  #             touch stack_outputs.json
+  #             echo '{' >> stack_outputs.json
+  #             echo '  "AwsAccountId": "${AWS::AccountId}",' >> stack_outputs.json
+  #             echo '  "AwsRegion": "${AWS::Region}",' >> stack_outputs.json
+  #             echo '  "S3Bucket": "${S3BucketName}",' >> stack_outputs.json
+  #             echo '  "SageMakerIamRoleArn": "${SageMakerIamRoleArn}",' >> stack_outputs.json
+  #             echo '  "SnakeAPI": "${SnakeAPI}",' >> stack_outputs.json
+  #             echo '  "EndPointS3Location": "s3://${SolutionsS3BucketNamePrefix}-${AWS::Region}/${SolutionName}/build/model-complete.tar.gz",' >> stack_outputs.json
+  #             echo '  "SagemakerEndPointName": "${SagemakerEndPointName}",' >> stack_outputs.json
+  #             echo '  "SagemakerTrainingInstanceType": "${SagemakerTrainingInstanceType}",' >> stack_outputs.json
+  #             echo '  "SagemakerInferenceInstanceType": "${SagemakerInferenceInstanceType}"' >> stack_outputs.json
+  #             echo '}' >> stack_outputs.json
+
+  #             python set_kernelspec.py --notebook RLlibEnv/1_Introduction.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
+  #             python set_kernelspec.py --notebook RLlibEnv/2_PolicyTraining.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
+  #             python set_kernelspec.py --notebook RLlibEnv/3_HeuristicsDeveloper.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
+              
+  #             EOF
+      
+Outputs:
+  # SourceEditionInNotebook:
+  #   Description: "Open Jupyter IDE. This authenticate you against Jupyter."
+  #   Value: !Sub "https://console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/notebook-instances/openNotebook/${SolutionPrefix}-battlesnake-nb?view=classic"
+  # HeuristicsDevEnvironment:
+  #   Description: "Modify, visualize and re-deploy heuristics. You need to click first on 'SourceEditionInNotebook' to be authenticated."
+  #   Value: !Sub "https://${SolutionPrefix}-battlesnake-nb.notebook.${AWS::Region}.sagemaker.aws/notebooks/RLlibEnv/HeuristicsDeveloper.ipynb"
+  # ModelTrainingEnvironment:
+  #   Description: "Modify, train, visualize and re-deploy model. You need to click first on 'SourceEditionInNotebook' to be authenticated."
+  #   Value: !Sub "https://${SolutionPrefix}-battlesnake-nb.notebook.${AWS::Region}.sagemaker.aws/notebooks/RLlibEnv/PolicyTraining.ipynb"
+  AWSRegion:
+    Description: The AWS Region
+    Value: !Sub ${AWS::Region}
+  # SagemakerStudioUrl:
+  #   Description: Direct link to Sagemaker Studio
+  #   Value: !Sub https://${AWS::Region}.console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/studio/open/${SageMakerStudioDomain.DomainId}/${UserProfileName}
+  # SageMakerStudioDomainId:
+  #   Description: SageMaker Studio domain id
+  #   Value: !GetAtt SageMakerStudioDomain.DomainId
+  # UserProfileName:
+  #   Description: SageMaker user profile name
+  #   Value: !Ref UserProfileName

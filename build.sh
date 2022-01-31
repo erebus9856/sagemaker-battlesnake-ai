@@ -67,4 +67,6 @@ aws s3 cp --recursive build $s3_prefix/build
 aws s3 cp README.md $s3_prefix/
 
 # Copy solution artefacts to the folder
-aws s3 cp "s3://sagemaker-solutions-artifacts/$1/model-complete.tar.gz" $s3_prefix/build/model-complete.tar.gz
+# aws s3 cp "s3://sagemaker-solutions-artifacts/$1/model-complete.tar.gz" $s3_prefix/build/model-complete.tar.gz
+# I did not have access to that bucket, so I just grabbed the latest model I could find and put it in my own bucket:
+aws s3 cp "s3://dnblak-dev1-us-west-2/$1/model-complete.tar.gz" $s3_prefix/build/model-complete.tar.gz
