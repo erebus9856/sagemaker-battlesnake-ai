@@ -1,0 +1,172 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "(SA0001) - sagemaker-battlesnake-ai: Solution for training and deploying a Battlesnake AI using Amazon SageMaker Studio. Version 1"
+
+Parameters:
+  VPCName:
+    Description: 'VPC Name'
+    Type: String
+    Default: 'LabVPC'
+  VPCCIDR:
+    Description: 'CIDR Block for VPC'
+    Type: String
+    Default: 10.0.0.0/16
+  PubSub1:
+    Description: 'Public Subnet 1'
+    Type: String
+    Default: 10.0.1.0/24
+  PubSub2:
+    Description: 'Public Subnet 2'
+    Type: String
+    Default: 10.0.2.0/24
+
+
+
+Resources:
+
+  ######################################
+  ### START Networking Section START ###
+  ######################################
+  # Defining the VPC Used for this lab, it contains one public subnet
+  labVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: True
+      EnableDnsHostnames: True
+      Tags:
+        - Key: Name
+          Value: !Ref VPCName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: labVPC-IGW
+
+  # Attached this IGW to the VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref labVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Create public subnets.
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref labVPC
+      CidrBlock: !Ref PubSub1
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Reach
+          Value: Public
+        - Key: Name
+          Value: !Sub ${VPCName} Public Subnet 1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref labVPC
+      CidrBlock: !Ref PubSub2
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Reach
+          Value: Public
+        - Key: Name
+          Value: !Sub ${VPCName} Public Subnet 2
+
+  # Create the Public Routing Tables.
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    # DependsOn:
+    #   - AttachGateway
+    Properties:
+      VpcId: !Ref labVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${VPCName} PublicRouteTable
+
+  # And add in the default route for the IGW to 0.0.0.0/0
+  PublicRouteIGW:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Attach the routing table to each of the subnets
+  PublicRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  SageMakerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: security group for SageMaker notebook instance, training jobs and hosting endpoint
+      VpcId: !Ref labVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${VPCName}-SageMakerSecurityGroup
+
+  SageMakerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: '-1'
+      GroupId: !Ref SageMakerSecurityGroup
+      SourceSecurityGroupId: !Ref SageMakerSecurityGroup
+
+  VPCEndpointS3:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      VpcId: !Ref labVPC
+      RouteTableIds:
+        - !Ref PublicRouteTable
+
+  VPCEndpointsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow TLS for VPC Endpoint
+      VpcId: !Ref labVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !GetAtt SageMakerSecurityGroup.GroupId
+        - IpProtocol: '-1'
+          CidrIp: !Ref 'VPCCIDR'
+          Description: Allow all traffic from the VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${VPCName}-EndpointSecurityGroup
+
+
+Outputs:
+  AWSRegion:
+    Description: The AWS Region
+    Value: !Sub ${AWS::Region}
+  labVPC:
+    Description: The lab VPCId
+    Value: !Ref labVPC
+  PublicSubnet1:
+    Description: PublicSubnet1 Id
+    Value: !Ref PublicSubnet1
+  PublicSubnet2:
+    Description: PublicSubnet2 Id
+    Value: !Ref PublicSubnet2
+  SageMakerSecurityGroup:
+    Description: The VPC Security Group Id
+    Value: !Ref SageMakerSecurityGroup
+  VPCEndpointsSecurityGroup:
+    Description: The VPC Endpoint Security Group Id
+    Value: !Ref VPCEndpointsSecurityGroup

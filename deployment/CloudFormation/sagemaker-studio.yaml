@@ -22,26 +22,20 @@ Parameters:
     Type: String
     Default: tmp
 
-  VPCName:
-    Description: 'VPC Name'
-    Type: String
-    Default: 'LabVPC'
-  VPCCIDR:
-    Description: 'CIDR Block for VPC'
-    Type: String
-    Default: 10.0.0.0/16
-  PubSub1:
-    Description: 'Public Subnet 1'
-    Type: String
-    Default: 10.0.1.0/24
-  PubSub2:
-    Description: 'Public Subnet 2'
-    Type: String
-    Default: 10.0.2.0/24
-
   UserProfileName:
     Type: String
     Default: SageMakerStudioUser
+
+  labVPC:
+    Type: String
+  PublicSubnet1:
+    Type: String
+  PublicSubnet2:
+    Type: String
+  SageMakerSecurityGroup:
+    Type: String
+  VPCEndpointsSecurityGroup:
+    Type: String
 
 
 # Delete the regions that you are not setting the lab to launch in from the list.
@@ -62,106 +56,6 @@ Mappings:
 
 Resources:
 
-  ######################################
-  ### START Networking Section START ###
-  ######################################
-  # Defining the VPC Used for this lab, it contains one public subnet
-  labVPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: !Ref VPCCIDR
-      EnableDnsSupport: True
-      EnableDnsHostnames: True
-      Tags:
-        - Key: Name
-          Value: !Ref VPCName
-
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    Properties:
-      Tags:
-        - Key: Name
-          Value: labVPC-IGW
-
-  # Attached this IGW to the VPC
-  AttachGateway:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref labVPC
-      InternetGatewayId: !Ref InternetGateway
-
-  # Create public subnets.
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref labVPC
-      CidrBlock: !Ref PubSub1
-      AvailabilityZone: !Select [0, !GetAZs '']
-      Tags:
-        - Key: Reach
-          Value: Public
-        - Key: Name
-          Value: !Sub ${VPCName} Public Subnet 1
-
-  PublicSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref labVPC
-      CidrBlock: !Ref PubSub2
-      AvailabilityZone: !Select [1, !GetAZs '']
-      Tags:
-        - Key: Reach
-          Value: Public
-        - Key: Name
-          Value: !Sub ${VPCName} Public Subnet 2
-
-  # Create the Public Routing Tables.
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    # DependsOn:
-    #   - AttachGateway
-    Properties:
-      VpcId: !Ref labVPC
-      Tags:
-        - Key: Name
-          Value: !Sub ${VPCName} PublicRouteTable
-
-  # And add in the default route for the IGW to 0.0.0.0/0
-  PublicRouteIGW:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-
-  # Attach the routing table to each of the subnets
-  PublicRouteTableAssociation1:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet1
-      RouteTableId: !Ref PublicRouteTable
-
-  PublicRouteTableAssociation2:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet2
-      RouteTableId: !Ref PublicRouteTable
-
-  SageMakerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: security group for SageMaker notebook instance, training jobs and hosting endpoint
-      VpcId: !Ref labVPC
-      Tags:
-        - Key: Name
-          Value: !Sub ${VPCName}-SageMakerSecurityGroup
-
-  SageMakerSecurityGroupIngress:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      IpProtocol: '-1'
-      GroupId: !Ref SageMakerSecurityGroup
-      SourceSecurityGroupId: !Ref SageMakerSecurityGroup
 
   ###########################################
   ### START SageMakerStudio Section START ###
@@ -218,12 +112,12 @@ Resources:
     Type: AWS::SageMaker::Domain
     Properties:
       AuthMode: IAM
-      AppNetworkAccessType: VpcOnly
+      AppNetworkAccessType: PublicInternetOnly
       DefaultUserSettings:
         ExecutionRole: !GetAtt SageMakerStudioDomainRole.Arn
         SecurityGroups: 
           - !Ref SageMakerSecurityGroup
-      DomainName: 'ArchitectingMLSolutions'
+      DomainName: 'BattleSnakeSolutions'
       VpcId: !Ref labVPC
       SubnetIds: 
         - !Ref PublicSubnet1
@@ -278,6 +172,461 @@ Resources:
 
 
 
+
+  ##################################################
+  ## START Copy files to SageMaker Studio section ##
+  ##################################################
+
+  updateLambdaStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties: 
+      RoleArn: !GetAtt updateLambdaSateMachineRole.Arn
+      DefinitionString: 
+        !Sub |
+            {
+              "Comment": "This runs to create files on the EFS volume",
+              "StartAt": "checkLambdaUpdateStatusLambda",
+              "States": {
+                "checkLambdaUpdateStatusLambda": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName": "${checkLambdaUpdateStatusLambda.Arn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "updateInProgress"
+                      ],
+                      "IntervalSeconds": 2,
+                      "MaxAttempts": 30,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "createNotebookFilesLambda"
+                },
+                "createNotebookFilesLambda": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName": "${createNotebookFilesLambda.Arn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException"
+                      ],
+                      "IntervalSeconds": 2,
+                      "MaxAttempts": 6,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "End": true
+                }
+              }
+            }
+
+  checkLambdaUpdateStatusLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: This Lambda function handles creation logic that CF can't handle
+      Code:
+        ZipFile: |
+          import json, boto3, logging
+
+          # Set up logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+            logger.info(json.dumps(event))
+
+            FunctionName=event['LambdaFunctionArn']
+
+            lamb = boto3.client('lambda')
+            response = lamb.get_function_configuration(
+              FunctionName=FunctionName
+            )
+            logger.info(response['LastUpdateStatus'])
+
+            if (response['LastUpdateStatus'] == 'Successful'):
+              statusCode = 200
+              return {
+                'ErrorCode': statusCode,
+                'body': json.dumps('Lambda function update is Successful!'),
+                'LambdaFunctionArn': event['LambdaFunctionArn']
+              }
+            else:
+              raise updateInProgress('Lambda function update is InProgress')
+          class updateInProgress(Exception): pass
+      Handler: index.handler
+      Role: !GetAtt 'createNotebookFilesLambdaRole.Arn'
+      Runtime: python3.7
+      Timeout: 500
+
+  createNotebookFilesLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: This Lambda function handles creation logic that CF can't handle
+      Code:
+        ZipFile: !Sub |
+          import json, os, logging, boto3, time
+
+          # Set up logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          prod = False
+
+          def handler(event, context):
+            logger.info(event)
+
+            path = '/mnt/efs/200005' # This is the userId for the first SM Studio user, so this only works for new deployments
+            s3 = boto3.client('s3')
+            try:
+              ########## THIS FILE PATH NEEDS TO BE UPDATED TO MATCH THE FILE YOU WANT TO DOWNLOAD ##########
+              s3.download_file('dnblak-dev1-us-west-2', 'sagemaker-battlesnake-ai/model-complete.tar.gz', path+'/model-complete.tar.gz')
+            except Exception as e:
+              logger.error(e)
+            # content = response['Body'].read().decode('utf-8')
+
+            logger.info(path)
+            for root, directories, files in os.walk(path, topdown=False):
+              for name in files:
+                logger.info(os.path.join(root, name))
+              for name in directories:
+                logger.info(os.path.join(root, name))
+            logger.info('===== after walk =====')
+
+            if prod:
+              lamb = boto3.client('lambda')
+              try:
+                response = lamb.delete_function(FunctionName=event['LambdaFunctionArn'])
+              except Exception as e:
+                logger.error(f'Unable to delete function for some reason: {e}')
+                responseData['Data'] = 'The Lambda function did not delete.'
+
+            return {
+              'StatusCode': 200,
+              'body': json.dumps('Fin!')
+            }
+
+      Handler: index.handler
+      Role: !GetAtt 'createNotebookFilesLambdaRole.Arn'
+      Runtime: python3.7
+      Timeout: 500
+      VpcConfig:
+        SubnetIds:
+          - !Ref PublicSubnet1
+          - !Ref PublicSubnet2
+        SecurityGroupIds:
+          - !Ref SageMakerSecurityGroup
+
+  updateLambdaLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: This Lambda function handles creation logic that CF can't handle
+      Code:
+        ZipFile: !Sub |
+          import json, os, logging, boto3, time, sys
+          import cfnresponse
+
+          # Set up logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          prod = False
+
+          def handler(event, context):
+            logger.info(event)
+
+            if event["RequestType"] == 'Create':
+              responseData = {}
+              
+              efs = boto3.client('efs')
+              fileSystems = efs.describe_file_systems()
+
+              if len(fileSystems['FileSystems']) > 1:
+                logger.error('Too many file systems')
+                ### CFN RESPONSE FAIL
+                responseData['Data'] = 'There are too many EFS file systems, somethings odd.'
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+              else:
+                FileSystemId = fileSystems['FileSystems'][0]['FileSystemId']
+                logger.debug(f'FileSystemId: {FileSystemId}')
+
+              try:
+                ap = efs.describe_access_points(FileSystemId=FileSystemId)
+              except Exception as e:
+                logger.error(f'Error checking tos ee if access points exist: {e}')
+
+              if len(ap['AccessPoints']) > 1:
+                logger.error('Too many access points')
+                responseData['Data'] = 'There are to many access points.'
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+                sys.exit("Error, access point already exists.")
+              else:
+                try:
+                  # This will only work for SageMaker Studio with 1 user account!
+                  accessPoint = efs.create_access_point(
+                      FileSystemId=FileSystemId,
+                      Tags=[
+                        {
+                          'Key': 'Name',
+                          'Value': 'LambdaAccess'
+                        },
+                      ],
+                      PosixUser={
+                        'Uid': 200005,
+                        'Gid': 100
+                      }
+                    )
+                except Exception as e:
+                  logger.error(f'Unable to create access point: {e}')
+                  responseData['Data'] = 'The EFS access point did not create.'
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+                  ### CFN RESPONSE FAIL
+
+              try:
+                accessPoint = efs.describe_access_points(FileSystemId=FileSystemId)
+              except Exception as e:
+                logger.error(f'Unable to find an access point for the file system: {e}')
+                ## CFN Fail
+                responseData['Data'] = 'The access point looks to have not been created?'
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+
+              logger.info(accessPoint)
+
+              if len(accessPoint['AccessPoints']) > 1:
+                logger.error('Too many access points')
+                ### CFN Response fail
+                responseData['Data'] = 'There are to many access points.'
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+              else:
+                accessPointArn = accessPoint['AccessPoints'][0]['AccessPointArn'] 
+                accessPointId = accessPoint['AccessPoints'][0]['AccessPointId']
+
+              apReady = True
+              while apReady:
+                logger.info('Waiting for EFS access point to be ready...')
+                apResponse = efs.describe_access_points(AccessPointId=accessPointId)
+                if apResponse['AccessPoints'][0]['LifeCycleState'] == 'available':
+                  apReady = False
+                else:
+                  time.sleep(2)
+
+              sagemaker = boto3.client('sagemaker')
+              domainInfo = sagemaker.list_domains()
+              domainId = domainInfo['Domains'][0]['DomainId'] # There can be only one [domain]
+
+              ec2 = boto3.client('ec2')
+              securityGroups = ec2.describe_security_groups(Filters=[{'Name': 'group-name','Values':['*'+domainId+'*']}])
+              sgs = [event['ResourceProperties'].get('VPCEndpointsSecurityGroup')]
+              logger.info(securityGroups)
+              for sg in securityGroups['SecurityGroups']:
+                sgs.append(sg['GroupId'])
+
+              lamb = boto3.client('lambda')
+
+              try:
+                updateConfig = lamb.update_function_configuration(
+                  FunctionName=event['ResourceProperties'].get('createNotebookFilesLambda'), 
+                  FileSystemConfigs=[{'Arn': accessPointArn, 'LocalMountPath': '/mnt/efs'}],
+                  VpcConfig={'SecurityGroupIds': sgs}
+                )
+              except Exception as e:
+                logger.error(f'Failed to update Lambda function config: {e}')
+                ### CFN Fail
+                responseData['Data'] = 'The Lambda function config did not update.'
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+
+              sfn = boto3.client('stepfunctions')
+              try:
+                response = sfn.start_execution(
+                  stateMachineArn="${updateLambdaStateMachine}",
+                  input="{\"LambdaFunctionArn\": \""+event['ResourceProperties'].get('createNotebookFilesLambda')+"\"}",
+                )
+              except Exception as e:
+                logger.error(f'Unable to start state machine: {e}')
+                responseData['Data'] = 'Unable to start the state machine.'
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+
+            if event["RequestType"] == 'Delete':
+              responseData = {}
+
+              try:
+                updateConfig = lamb.update_function_configuration(
+                  FunctionName=event['ResourceProperties'].get('createNotebookFilesLambda'), 
+                  FileSystemConfigs=[]
+                )
+              except Exception as e:
+                logger.error(f'Failed to update Lambda function config: {e}')
+                ### CFN Fail
+                responseData['Data'] = 'The Lambda function config did not update.'
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+              try:
+                response = efs.delete_access_point(AccessPointId=accessPointId)
+              except Exception as e:
+                logger.error(f'Unable to delete EFS access point: {e}')
+                responseData['Data'] = 'The EFS access point did not delete'
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+
+              if prod:
+                try:
+                  response = lamb.delete_function(FunctionName=event['ResourceProperties'].get('createNotebookFilesLambda'))
+                except Exception as e:
+                  logger.error(f'Unable to delete function for some reason: {e}')
+                  responseData['Data'] = 'The Lambda function did not delete.'
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+
+            responseData['Data'] = 'Successfully created files on the EFS volume'
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, event["LogicalResourceId"]);
+
+            # Need something that will delete the EFS vol and security groups.
+            return {
+              'statusCode': 200,
+              'body': json.dumps('Fin!')
+            }
+
+      Handler: index.handler
+      Role: !GetAtt createNotebookFilesLambdaRole.Arn
+      Runtime: python3.7
+      Timeout: 500
+
+  updateLambdaLambdaCaller:
+    Type: Custom::EnvSetupCaller
+    Properties:
+      ServiceToken: !GetAtt updateLambdaLambda.Arn
+      createNotebookFilesLambda: !Ref createNotebookFilesLambda
+      VPCEndpointsSecurityGroup: !Ref VPCEndpointsSecurityGroup
+
+  createNotebookFilesLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: lambdaS3Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: '*'
+        - PolicyName: lambdaEFSPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:*
+                  - lambda:*
+                  - ec2:*
+                  - sagemaker:*
+                  - states:*
+                  - s3:*
+                Resource: '*'
+        - PolicyName: lambdaLogsCreatePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+        - PolicyName: lambdaLogPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+        - PolicyName: lambdaS3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:TagResource
+                  - tag:TagResources
+                Resource: '*'
+
+  updateLambdaSateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: statesEFSPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:*
+                  - ec2:*
+                  - states:*
+                Resource: '*'
+        - PolicyName: lambdaLogsCreatePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+        - PolicyName: lambdaLogPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+        - PolicyName: lambdaS3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:TagResource
+                  - tag:TagResources
+                Resource: '*'
+
+  ################################################
+  ## END copy files to SageMaker Studio section ##
+  ################################################
 
 
 
@@ -360,12 +709,12 @@ Outputs:
   AWSRegion:
     Description: The AWS Region
     Value: !Sub ${AWS::Region}
-  # SagemakerStudioUrl:
-  #   Description: Direct link to Sagemaker Studio
-  #   Value: !Sub https://${AWS::Region}.console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/studio/open/${SageMakerStudioDomain.DomainId}/${UserProfileName}
-  # SageMakerStudioDomainId:
-  #   Description: SageMaker Studio domain id
-  #   Value: !GetAtt SageMakerStudioDomain.DomainId
-  # UserProfileName:
-  #   Description: SageMaker user profile name
-  #   Value: !Ref UserProfileName
+  SagemakerStudioUrl:
+    Description: Direct link to Sagemaker Studio
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/studio/open/${SageMakerStudioDomain.DomainId}/${UserProfileName}
+  SageMakerStudioDomainId:
+    Description: SageMaker Studio domain id
+    Value: !GetAtt SageMakerStudioDomain.DomainId
+  UserProfileName:
+    Description: SageMaker user profile name
+    Value: !Ref UserProfileName
