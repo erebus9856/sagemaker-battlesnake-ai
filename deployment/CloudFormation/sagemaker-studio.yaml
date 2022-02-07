@@ -141,7 +141,9 @@ Resources:
 
   SageMakerStudioDefaultApp:
     Type: AWS::SageMaker::App
-    DependsOn: SageMakerStudioUserProfile
+    DependsOn: 
+      - SageMakerStudioUserProfile
+      - attachLifecyclePolicyLambdaCaller
     Properties: 
       AppName: 'default'
       AppType: JupyterServer
@@ -150,7 +152,9 @@ Resources:
 
   SageMakerStudioNotebookApp:
     Type: AWS::SageMaker::App
-    DependsOn: SageMakerStudioUserProfile
+    DependsOn: 
+      - SageMakerStudioUserProfile
+      - attachLifecyclePolicyLambdaCaller
     Properties: 
       AppName: 'Notebook'
       AppType: KernelGateway
@@ -177,472 +181,472 @@ Resources:
   ## START Copy files to SageMaker Studio section ##
   ##################################################
 
-  updateLambdaStateMachine:
-    Type: AWS::StepFunctions::StateMachine
-    Properties: 
-      RoleArn: !GetAtt updateLambdaSateMachineRole.Arn
-      DefinitionString: 
-        !Sub |
-            {
-              "Comment": "This runs to create files on the EFS volume",
-              "StartAt": "checkLambdaUpdateStatusLambda",
-              "States": {
-                "checkLambdaUpdateStatusLambda": {
-                  "Type": "Task",
-                  "Resource": "arn:aws:states:::lambda:invoke",
-                  "OutputPath": "$.Payload",
-                  "Parameters": {
-                    "Payload.$": "$",
-                    "FunctionName": "${checkLambdaUpdateStatusLambda.Arn}"
-                  },
-                  "Retry": [
-                    {
-                      "ErrorEquals": [
-                        "Lambda.ServiceException",
-                        "Lambda.AWSLambdaException",
-                        "Lambda.SdkClientException",
-                        "updateInProgress"
-                      ],
-                      "IntervalSeconds": 2,
-                      "MaxAttempts": 30,
-                      "BackoffRate": 2
-                    }
-                  ],
-                  "Next": "createNotebookFilesLambda"
-                },
-                "createNotebookFilesLambda": {
-                  "Type": "Task",
-                  "Resource": "arn:aws:states:::lambda:invoke",
-                  "OutputPath": "$.Payload",
-                  "Parameters": {
-                    "Payload.$": "$",
-                    "FunctionName": "${createNotebookFilesLambda.Arn}"
-                  },
-                  "Retry": [
-                    {
-                      "ErrorEquals": [
-                        "Lambda.ServiceException",
-                        "Lambda.AWSLambdaException",
-                        "Lambda.SdkClientException"
-                      ],
-                      "IntervalSeconds": 2,
-                      "MaxAttempts": 6,
-                      "BackoffRate": 2
-                    }
-                  ],
-                  "End": true
-                }
-              }
-            }
+  # updateLambdaStateMachine:
+  #   Type: AWS::StepFunctions::StateMachine
+  #   Properties: 
+  #     RoleArn: !GetAtt updateLambdaSateMachineRole.Arn
+  #     DefinitionString: 
+  #       !Sub |
+  #           {
+  #             "Comment": "This runs to create files on the EFS volume",
+  #             "StartAt": "checkLambdaUpdateStatusLambda",
+  #             "States": {
+  #               "checkLambdaUpdateStatusLambda": {
+  #                 "Type": "Task",
+  #                 "Resource": "arn:aws:states:::lambda:invoke",
+  #                 "OutputPath": "$.Payload",
+  #                 "Parameters": {
+  #                   "Payload.$": "$",
+  #                   "FunctionName": "${checkLambdaUpdateStatusLambda.Arn}"
+  #                 },
+  #                 "Retry": [
+  #                   {
+  #                     "ErrorEquals": [
+  #                       "Lambda.ServiceException",
+  #                       "Lambda.AWSLambdaException",
+  #                       "Lambda.SdkClientException",
+  #                       "updateInProgress"
+  #                     ],
+  #                     "IntervalSeconds": 2,
+  #                     "MaxAttempts": 30,
+  #                     "BackoffRate": 2
+  #                   }
+  #                 ],
+  #                 "Next": "createNotebookFilesLambda"
+  #               },
+  #               "createNotebookFilesLambda": {
+  #                 "Type": "Task",
+  #                 "Resource": "arn:aws:states:::lambda:invoke",
+  #                 "OutputPath": "$.Payload",
+  #                 "Parameters": {
+  #                   "Payload.$": "$",
+  #                   "FunctionName": "${createNotebookFilesLambda.Arn}"
+  #                 },
+  #                 "Retry": [
+  #                   {
+  #                     "ErrorEquals": [
+  #                       "Lambda.ServiceException",
+  #                       "Lambda.AWSLambdaException",
+  #                       "Lambda.SdkClientException"
+  #                     ],
+  #                     "IntervalSeconds": 2,
+  #                     "MaxAttempts": 6,
+  #                     "BackoffRate": 2
+  #                   }
+  #                 ],
+  #                 "End": true
+  #               }
+  #             }
+  #           }
 
-  checkLambdaUpdateStatusLambda:
-    Type: 'AWS::Lambda::Function'
-    Properties:
-      Description: This Lambda function handles creation logic that CF can't handle
-      Code:
-        ZipFile: |
-          import json, boto3, logging
+  # checkLambdaUpdateStatusLambda:
+  #   Type: 'AWS::Lambda::Function'
+  #   Properties:
+  #     Description: This Lambda function handles creation logic that CF can't handle
+  #     Code:
+  #       ZipFile: |
+  #         import json, boto3, logging
 
-          # Set up logging
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
+  #         # Set up logging
+  #         logger = logging.getLogger()
+  #         logger.setLevel(logging.INFO)
 
-          def handler(event, context):
-            logger.info(json.dumps(event))
+  #         def handler(event, context):
+  #           logger.info(json.dumps(event))
 
-            FunctionName=event['LambdaFunctionArn']
+  #           FunctionName=event['LambdaFunctionArn']
 
-            lamb = boto3.client('lambda')
-            response = lamb.get_function_configuration(
-              FunctionName=FunctionName
-            )
-            logger.info(response['LastUpdateStatus'])
+  #           lamb = boto3.client('lambda')
+  #           response = lamb.get_function_configuration(
+  #             FunctionName=FunctionName
+  #           )
+  #           logger.info(response['LastUpdateStatus'])
 
-            if (response['LastUpdateStatus'] == 'Successful'):
-              statusCode = 200
-              return {
-                'ErrorCode': statusCode,
-                'body': json.dumps('Lambda function update is Successful!'),
-                'LambdaFunctionArn': event['LambdaFunctionArn']
-              }
-            else:
-              raise updateInProgress('Lambda function update is InProgress')
-          class updateInProgress(Exception): pass
-      Handler: index.handler
-      Role: !GetAtt 'createNotebookFilesLambdaRole.Arn'
-      Runtime: python3.7
-      Timeout: 500
+  #           if (response['LastUpdateStatus'] == 'Successful'):
+  #             statusCode = 200
+  #             return {
+  #               'ErrorCode': statusCode,
+  #               'body': json.dumps('Lambda function update is Successful!'),
+  #               'LambdaFunctionArn': event['LambdaFunctionArn']
+  #             }
+  #           else:
+  #             raise updateInProgress('Lambda function update is InProgress')
+  #         class updateInProgress(Exception): pass
+  #     Handler: index.handler
+  #     Role: !GetAtt 'createNotebookFilesLambdaRole.Arn'
+  #     Runtime: python3.7
+  #     Timeout: 500
 
-  createNotebookFilesLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      Description: This Lambda function handles creation logic that CF can't handle
-      Code:
-        ZipFile: !Sub |
-          import json, os, logging, boto3, time
+  # createNotebookFilesLambda:
+  #   Type: AWS::Lambda::Function
+  #   Properties:
+  #     Description: This Lambda function handles creation logic that CF can't handle
+  #     Code:
+  #       ZipFile: !Sub |
+  #         import json, os, logging, boto3, time
 
-          # Set up logging
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
+  #         # Set up logging
+  #         logger = logging.getLogger()
+  #         logger.setLevel(logging.INFO)
 
-          prod = False
+  #         prod = False
 
-          def handler(event, context):
-            logger.info(event)
+  #         def handler(event, context):
+  #           logger.info(event)
 
-            path = '/mnt/efs/200005' # This is the userId for the first SM Studio user, so this only works for new deployments
-            s3 = boto3.client('s3')
-            try:
-              ########## THIS FILE PATH NEEDS TO BE UPDATED TO MATCH THE FILE YOU WANT TO DOWNLOAD ##########
-              s3.download_file('dnblak-dev1-us-west-2', 'sagemaker-battlesnake-ai/model-complete.tar.gz', path+'/model-complete.tar.gz')
-              download_s3_folder('dnblak-dev1-us-west-2', 'sagemaker-battlesnake-ai/source', path)
-            except Exception as e:
-              logger.error(e)
-            # content = response['Body'].read().decode('utf-8')
+  #           path = '/mnt/efs/200005' # This is the userId for the first SM Studio user, so this only works for new deployments
+  #           s3 = boto3.client('s3')
+  #           try:
+  #             ########## THIS FILE PATH NEEDS TO BE UPDATED TO MATCH THE FILE YOU WANT TO DOWNLOAD ##########
+  #             s3.download_file('dnblak-dev1-us-west-2', 'sagemaker-battlesnake-ai/model-complete.tar.gz', path+'/model-complete.tar.gz')
+  #             download_s3_folder('dnblak-dev1-us-west-2', 'sagemaker-battlesnake-ai/source', path)
+  #           except Exception as e:
+  #             logger.error(e)
+  #           # content = response['Body'].read().decode('utf-8')
 
-            logger.info(path)
-            for root, directories, files in os.walk(path, topdown=False):
-              for name in files:
-                logger.info(os.path.join(root, name))
-              for name in directories:
-                logger.info(os.path.join(root, name))
-            logger.info('===== after walk =====')
+  #           logger.info(path)
+  #           for root, directories, files in os.walk(path, topdown=False):
+  #             for name in files:
+  #               logger.info(os.path.join(root, name))
+  #             for name in directories:
+  #               logger.info(os.path.join(root, name))
+  #           logger.info('===== after walk =====')
 
-            if prod:
-              lamb = boto3.client('lambda')
-              try:
-                response = lamb.delete_function(FunctionName=event['LambdaFunctionArn'])
-              except Exception as e:
-                logger.error(f'Unable to delete function for some reason: {e}')
-                responseData['Data'] = 'The Lambda function did not delete.'
+  #           if prod:
+  #             lamb = boto3.client('lambda')
+  #             try:
+  #               response = lamb.delete_function(FunctionName=event['LambdaFunctionArn'])
+  #             except Exception as e:
+  #               logger.error(f'Unable to delete function for some reason: {e}')
+  #               responseData['Data'] = 'The Lambda function did not delete.'
 
-            return {
-              'StatusCode': 200,
-              'body': json.dumps('Fin!')
-            }
+  #           return {
+  #             'StatusCode': 200,
+  #             'body': json.dumps('Fin!')
+  #           }
 
-          def download_s3_folder(bucket_name, s3_folder, local_dir=None):
-          s3 = boto3.resource('s3')
-          """
-          Download the contents of a folder directory
-          Args:
-              bucket_name: the name of the s3 bucket
-              s3_folder: the folder path in the s3 bucket
-              local_dir: a relative or absolute directory path in the local file system
-          """
-          bucket = s3.Bucket(bucket_name)
-          for obj in bucket.objects.filter(Prefix=s3_folder):
-              target = obj.key if local_dir is None \
-                  else os.path.join(local_dir, os.path.relpath(obj.key, s3_folder))
-              if not os.path.exists(os.path.dirname(target)):
-                  os.makedirs(os.path.dirname(target))
-              if obj.key[-1] == '/':
-                  continue
-              bucket.download_file(obj.key, target)
+  #         def download_s3_folder(bucket_name, s3_folder, local_dir=None):
+  #         s3 = boto3.resource('s3')
+  #         """
+  #         Download the contents of a folder directory
+  #         Args:
+  #             bucket_name: the name of the s3 bucket
+  #             s3_folder: the folder path in the s3 bucket
+  #             local_dir: a relative or absolute directory path in the local file system
+  #         """
+  #         bucket = s3.Bucket(bucket_name)
+  #         for obj in bucket.objects.filter(Prefix=s3_folder):
+  #             target = obj.key if local_dir is None \
+  #                 else os.path.join(local_dir, os.path.relpath(obj.key, s3_folder))
+  #             if not os.path.exists(os.path.dirname(target)):
+  #                 os.makedirs(os.path.dirname(target))
+  #             if obj.key[-1] == '/':
+  #                 continue
+  #             bucket.download_file(obj.key, target)
 
-      Handler: index.handler
-      Role: !GetAtt 'createNotebookFilesLambdaRole.Arn'
-      Runtime: python3.7
-      Timeout: 500
-      VpcConfig:
-        SubnetIds:
-          - !Ref PublicSubnet1
-          - !Ref PublicSubnet2
-        SecurityGroupIds:
-          - !Ref SageMakerSecurityGroup
+  #     Handler: index.handler
+  #     Role: !GetAtt 'createNotebookFilesLambdaRole.Arn'
+  #     Runtime: python3.7
+  #     Timeout: 500
+  #     VpcConfig:
+  #       SubnetIds:
+  #         - !Ref PublicSubnet1
+  #         - !Ref PublicSubnet2
+  #       SecurityGroupIds:
+  #         - !Ref SageMakerSecurityGroup
 
-  updateLambdaLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      Description: This Lambda function handles creation logic that CF can't handle
-      Code:
-        ZipFile: !Sub |
-          import json, os, logging, boto3, time, sys
-          import cfnresponse
+  # updateLambdaLambda:
+  #   Type: AWS::Lambda::Function
+  #   Properties:
+  #     Description: This Lambda function handles creation logic that CF can't handle
+  #     Code:
+  #       ZipFile: !Sub |
+  #         import json, os, logging, boto3, time, sys
+  #         import cfnresponse
 
-          # Set up logging
-          logger = logging.getLogger()
-          logger.setLevel(logging.INFO)
+  #         # Set up logging
+  #         logger = logging.getLogger()
+  #         logger.setLevel(logging.INFO)
 
-          prod = False
+  #         prod = False
 
-          def handler(event, context):
-            logger.info(event)
+  #         def handler(event, context):
+  #           logger.info(event)
 
-            if event["RequestType"] == 'Create':
-              responseData = {}
+  #           if event["RequestType"] == 'Create':
+  #             responseData = {}
               
-              efs = boto3.client('efs')
-              fileSystems = efs.describe_file_systems()
+  #             efs = boto3.client('efs')
+  #             fileSystems = efs.describe_file_systems()
 
-              if len(fileSystems['FileSystems']) > 1:
-                logger.error('Too many file systems')
-                ### CFN RESPONSE FAIL
-                responseData['Data'] = 'There are too many EFS file systems, somethings odd.'
-                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
-              else:
-                FileSystemId = fileSystems['FileSystems'][0]['FileSystemId']
-                logger.debug(f'FileSystemId: {FileSystemId}')
+  #             if len(fileSystems['FileSystems']) > 1:
+  #               logger.error('Too many file systems')
+  #               ### CFN RESPONSE FAIL
+  #               responseData['Data'] = 'There are too many EFS file systems, somethings odd.'
+  #               cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #             else:
+  #               FileSystemId = fileSystems['FileSystems'][0]['FileSystemId']
+  #               logger.debug(f'FileSystemId: {FileSystemId}')
 
-              try:
-                ap = efs.describe_access_points(FileSystemId=FileSystemId)
-              except Exception as e:
-                logger.error(f'Error checking tos ee if access points exist: {e}')
+  #             try:
+  #               ap = efs.describe_access_points(FileSystemId=FileSystemId)
+  #             except Exception as e:
+  #               logger.error(f'Error checking tos ee if access points exist: {e}')
 
-              if len(ap['AccessPoints']) > 1:
-                logger.error('Too many access points')
-                responseData['Data'] = 'There are to many access points.'
-                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
-                sys.exit("Error, access point already exists.")
-              else:
-                try:
-                  # This will only work for SageMaker Studio with 1 user account!
-                  accessPoint = efs.create_access_point(
-                      FileSystemId=FileSystemId,
-                      Tags=[
-                        {
-                          'Key': 'Name',
-                          'Value': 'LambdaAccess'
-                        },
-                      ],
-                      PosixUser={
-                        'Uid': 200005,
-                        'Gid': 100
-                      }
-                    )
-                except Exception as e:
-                  logger.error(f'Unable to create access point: {e}')
-                  responseData['Data'] = 'The EFS access point did not create.'
-                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
-                  ### CFN RESPONSE FAIL
+  #             if len(ap['AccessPoints']) > 1:
+  #               logger.error('Too many access points')
+  #               responseData['Data'] = 'There are to many access points.'
+  #               cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #               sys.exit("Error, access point already exists.")
+  #             else:
+  #               try:
+  #                 # This will only work for SageMaker Studio with 1 user account!
+  #                 accessPoint = efs.create_access_point(
+  #                     FileSystemId=FileSystemId,
+  #                     Tags=[
+  #                       {
+  #                         'Key': 'Name',
+  #                         'Value': 'LambdaAccess'
+  #                       },
+  #                     ],
+  #                     PosixUser={
+  #                       'Uid': 200005,
+  #                       'Gid': 100
+  #                     }
+  #                   )
+  #               except Exception as e:
+  #                 logger.error(f'Unable to create access point: {e}')
+  #                 responseData['Data'] = 'The EFS access point did not create.'
+  #                 cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #                 ### CFN RESPONSE FAIL
 
-              try:
-                accessPoint = efs.describe_access_points(FileSystemId=FileSystemId)
-              except Exception as e:
-                logger.error(f'Unable to find an access point for the file system: {e}')
-                ## CFN Fail
-                responseData['Data'] = 'The access point looks to have not been created?'
-                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #             try:
+  #               accessPoint = efs.describe_access_points(FileSystemId=FileSystemId)
+  #             except Exception as e:
+  #               logger.error(f'Unable to find an access point for the file system: {e}')
+  #               ## CFN Fail
+  #               responseData['Data'] = 'The access point looks to have not been created?'
+  #               cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
 
-              logger.info(accessPoint)
+  #             logger.info(accessPoint)
 
-              if len(accessPoint['AccessPoints']) > 1:
-                logger.error('Too many access points')
-                ### CFN Response fail
-                responseData['Data'] = 'There are to many access points.'
-                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
-              else:
-                accessPointArn = accessPoint['AccessPoints'][0]['AccessPointArn'] 
-                accessPointId = accessPoint['AccessPoints'][0]['AccessPointId']
+  #             if len(accessPoint['AccessPoints']) > 1:
+  #               logger.error('Too many access points')
+  #               ### CFN Response fail
+  #               responseData['Data'] = 'There are to many access points.'
+  #               cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #             else:
+  #               accessPointArn = accessPoint['AccessPoints'][0]['AccessPointArn'] 
+  #               accessPointId = accessPoint['AccessPoints'][0]['AccessPointId']
 
-              apReady = True
-              while apReady:
-                logger.info('Waiting for EFS access point to be ready...')
-                apResponse = efs.describe_access_points(AccessPointId=accessPointId)
-                if apResponse['AccessPoints'][0]['LifeCycleState'] == 'available':
-                  apReady = False
-                else:
-                  time.sleep(2)
+  #             apReady = True
+  #             while apReady:
+  #               logger.info('Waiting for EFS access point to be ready...')
+  #               apResponse = efs.describe_access_points(AccessPointId=accessPointId)
+  #               if apResponse['AccessPoints'][0]['LifeCycleState'] == 'available':
+  #                 apReady = False
+  #               else:
+  #                 time.sleep(2)
 
-              sagemaker = boto3.client('sagemaker')
-              domainInfo = sagemaker.list_domains()
-              domainId = domainInfo['Domains'][0]['DomainId'] # There can be only one [domain]
+  #             sagemaker = boto3.client('sagemaker')
+  #             domainInfo = sagemaker.list_domains()
+  #             domainId = domainInfo['Domains'][0]['DomainId'] # There can be only one [domain]
 
-              ec2 = boto3.client('ec2')
-              securityGroups = ec2.describe_security_groups(Filters=[{'Name': 'group-name','Values':['*'+domainId+'*']}])
-              sgs = [event['ResourceProperties'].get('VPCEndpointsSecurityGroup')]
-              logger.info(securityGroups)
-              for sg in securityGroups['SecurityGroups']:
-                sgs.append(sg['GroupId'])
+  #             ec2 = boto3.client('ec2')
+  #             securityGroups = ec2.describe_security_groups(Filters=[{'Name': 'group-name','Values':['*'+domainId+'*']}])
+  #             sgs = [event['ResourceProperties'].get('VPCEndpointsSecurityGroup')]
+  #             logger.info(securityGroups)
+  #             for sg in securityGroups['SecurityGroups']:
+  #               sgs.append(sg['GroupId'])
 
-              lamb = boto3.client('lambda')
+  #             lamb = boto3.client('lambda')
 
-              try:
-                updateConfig = lamb.update_function_configuration(
-                  FunctionName=event['ResourceProperties'].get('createNotebookFilesLambda'), 
-                  FileSystemConfigs=[{'Arn': accessPointArn, 'LocalMountPath': '/mnt/efs'}],
-                  VpcConfig={'SecurityGroupIds': sgs}
-                )
-              except Exception as e:
-                logger.error(f'Failed to update Lambda function config: {e}')
-                ### CFN Fail
-                responseData['Data'] = 'The Lambda function config did not update.'
-                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #             try:
+  #               updateConfig = lamb.update_function_configuration(
+  #                 FunctionName=event['ResourceProperties'].get('createNotebookFilesLambda'), 
+  #                 FileSystemConfigs=[{'Arn': accessPointArn, 'LocalMountPath': '/mnt/efs'}],
+  #                 VpcConfig={'SecurityGroupIds': sgs}
+  #               )
+  #             except Exception as e:
+  #               logger.error(f'Failed to update Lambda function config: {e}')
+  #               ### CFN Fail
+  #               responseData['Data'] = 'The Lambda function config did not update.'
+  #               cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
 
-              sfn = boto3.client('stepfunctions')
-              try:
-                response = sfn.start_execution(
-                  stateMachineArn="${updateLambdaStateMachine}",
-                  input="{\"LambdaFunctionArn\": \""+event['ResourceProperties'].get('createNotebookFilesLambda')+"\"}",
-                )
-              except Exception as e:
-                logger.error(f'Unable to start state machine: {e}')
-                responseData['Data'] = 'Unable to start the state machine.'
-                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #             sfn = boto3.client('stepfunctions')
+  #             try:
+  #               response = sfn.start_execution(
+  #                 stateMachineArn="${updateLambdaStateMachine}",
+  #                 input="{\"LambdaFunctionArn\": \""+event['ResourceProperties'].get('createNotebookFilesLambda')+"\"}",
+  #               )
+  #             except Exception as e:
+  #               logger.error(f'Unable to start state machine: {e}')
+  #               responseData['Data'] = 'Unable to start the state machine.'
+  #               cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
 
-            if event["RequestType"] == 'Delete':
-              responseData = {}
+  #           if event["RequestType"] == 'Delete':
+  #             responseData = {}
 
-              try:
-                updateConfig = lamb.update_function_configuration(
-                  FunctionName=event['ResourceProperties'].get('createNotebookFilesLambda'), 
-                  FileSystemConfigs=[]
-                )
-              except Exception as e:
-                logger.error(f'Failed to update Lambda function config: {e}')
-                ### CFN Fail
-                responseData['Data'] = 'The Lambda function config did not update.'
-                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
-              try:
-                response = efs.delete_access_point(AccessPointId=accessPointId)
-              except Exception as e:
-                logger.error(f'Unable to delete EFS access point: {e}')
-                responseData['Data'] = 'The EFS access point did not delete'
-                cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #             try:
+  #               updateConfig = lamb.update_function_configuration(
+  #                 FunctionName=event['ResourceProperties'].get('createNotebookFilesLambda'), 
+  #                 FileSystemConfigs=[]
+  #               )
+  #             except Exception as e:
+  #               logger.error(f'Failed to update Lambda function config: {e}')
+  #               ### CFN Fail
+  #               responseData['Data'] = 'The Lambda function config did not update.'
+  #               cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #             try:
+  #               response = efs.delete_access_point(AccessPointId=accessPointId)
+  #             except Exception as e:
+  #               logger.error(f'Unable to delete EFS access point: {e}')
+  #               responseData['Data'] = 'The EFS access point did not delete'
+  #               cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
 
-              if prod:
-                try:
-                  response = lamb.delete_function(FunctionName=event['ResourceProperties'].get('createNotebookFilesLambda'))
-                except Exception as e:
-                  logger.error(f'Unable to delete function for some reason: {e}')
-                  responseData['Data'] = 'The Lambda function did not delete.'
-                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
+  #             if prod:
+  #               try:
+  #                 response = lamb.delete_function(FunctionName=event['ResourceProperties'].get('createNotebookFilesLambda'))
+  #               except Exception as e:
+  #                 logger.error(f'Unable to delete function for some reason: {e}')
+  #                 responseData['Data'] = 'The Lambda function did not delete.'
+  #                 cfnresponse.send(event, context, cfnresponse.FAILED, responseData, event["LogicalResourceId"]);
 
-            responseData['Data'] = 'Successfully created files on the EFS volume'
-            cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, event["LogicalResourceId"]);
+  #           responseData['Data'] = 'Successfully created files on the EFS volume'
+  #           cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, event["LogicalResourceId"]);
 
-            # Need something that will delete the EFS vol and security groups.
-            return {
-              'statusCode': 200,
-              'body': json.dumps('Fin!')
-            }
+  #           # Need something that will delete the EFS vol and security groups.
+  #           return {
+  #             'statusCode': 200,
+  #             'body': json.dumps('Fin!')
+  #           }
 
-      Handler: index.handler
-      Role: !GetAtt createNotebookFilesLambdaRole.Arn
-      Runtime: python3.7
-      Timeout: 500
+  #     Handler: index.handler
+  #     Role: !GetAtt createNotebookFilesLambdaRole.Arn
+  #     Runtime: python3.7
+  #     Timeout: 500
 
-  updateLambdaLambdaCaller:
-    Type: Custom::EnvSetupCaller
-    Properties:
-      ServiceToken: !GetAtt updateLambdaLambda.Arn
-      createNotebookFilesLambda: !Ref createNotebookFilesLambda
-      VPCEndpointsSecurityGroup: !Ref VPCEndpointsSecurityGroup
+  # updateLambdaLambdaCaller:
+  #   Type: Custom::EnvSetupCaller
+  #   Properties:
+  #     ServiceToken: !GetAtt updateLambdaLambda.Arn
+  #     createNotebookFilesLambda: !Ref createNotebookFilesLambda
+  #     VPCEndpointsSecurityGroup: !Ref VPCEndpointsSecurityGroup
 
-  createNotebookFilesLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Path: /
-      Policies:
-        - PolicyName: lambdaS3Policy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:*
-                Resource: '*'
-        - PolicyName: lambdaEFSPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - elasticfilesystem:*
-                  - lambda:*
-                  - ec2:*
-                  - sagemaker:*
-                  - states:*
-                  - s3:*
-                Resource: '*'
-        - PolicyName: lambdaLogsCreatePolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
-        - PolicyName: lambdaLogPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource:
-                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
-        - PolicyName: lambdaS3AccessPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - events:TagResource
-                  - tag:TagResources
-                Resource: '*'
+  # createNotebookFilesLambdaRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service:
+  #               - lambda.amazonaws.com
+  #           Action:
+  #             - sts:AssumeRole
+  #     Path: /
+  #     Policies:
+  #       - PolicyName: lambdaS3Policy
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - s3:*
+  #               Resource: '*'
+  #       - PolicyName: lambdaEFSPolicy
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - elasticfilesystem:*
+  #                 - lambda:*
+  #                 - ec2:*
+  #                 - sagemaker:*
+  #                 - states:*
+  #                 - s3:*
+  #               Resource: '*'
+  #       - PolicyName: lambdaLogsCreatePolicy
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - logs:CreateLogGroup
+  #               Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+  #       - PolicyName: lambdaLogPolicy
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - logs:CreateLogStream
+  #                 - logs:PutLogEvents
+  #               Resource:
+  #                 - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+  #       - PolicyName: lambdaS3AccessPolicy
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - events:TagResource
+  #                 - tag:TagResources
+  #               Resource: '*'
 
-  updateLambdaSateMachineRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - states.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Path: /
-      Policies:
-        - PolicyName: statesEFSPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - lambda:*
-                  - ec2:*
-                  - states:*
-                Resource: '*'
-        - PolicyName: lambdaLogsCreatePolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
-        - PolicyName: lambdaLogPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource:
-                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
-        - PolicyName: lambdaS3AccessPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - events:TagResource
-                  - tag:TagResources
-                Resource: '*'
+  # updateLambdaSateMachineRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service:
+  #               - states.amazonaws.com
+  #           Action:
+  #             - sts:AssumeRole
+  #     Path: /
+  #     Policies:
+  #       - PolicyName: statesEFSPolicy
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - lambda:*
+  #                 - ec2:*
+  #                 - states:*
+  #               Resource: '*'
+  #       - PolicyName: lambdaLogsCreatePolicy
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - logs:CreateLogGroup
+  #               Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+  #       - PolicyName: lambdaLogPolicy
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - logs:CreateLogStream
+  #                 - logs:PutLogEvents
+  #               Resource:
+  #                 - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+  #       - PolicyName: lambdaS3AccessPolicy
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - events:TagResource
+  #                 - tag:TagResources
+  #               Resource: '*'
 
   ################################################
   ## END copy files to SageMaker Studio section ##
@@ -673,49 +677,136 @@ Resources:
   #         - id: W1201
   #           reason: Solution does not have KMS encryption enabled by default
 
-  # LifeCycleConfig:
-  #   Type: AWS::SageMaker::NotebookInstanceLifecycleConfig
-  #   Properties:
-  #     OnStart:
-  #       - Content:
-  #           Fn::Base64: !Sub |
-  #             cd /home/ec2-user/SageMaker
-  #             sudo -u ec2-user -i <<EOF
-              
-  #             source /home/ec2-user/anaconda3/bin/activate tensorflow_p36
+# # https://aws.amazon.com/blogs/machine-learning/customize-amazon-sagemaker-studio-using-lifecycle-configurations/
+# # https://docs.aws.amazon.com/sagemaker/latest/dg/studio-lcc-create.html
+# # Add the go to sleep thing to this for kernels.
+#   LifeCycleConfig:
+#     Type: AWS::SageMaker::NotebookInstanceLifecycleConfig
+#     Properties:
+#       OnStart:
+#         - Content:
+#             Fn::Base64: !Sub |
+#               cd /home/sagemaker-user
+#               sudo -u sagemaker-user -i <<EOF
+#               pip install --upgrade pip
+#               pip install -r /home/sagemaker-user/SageMaker/RLlibEnv/requirements.txt
+#               EOF
+#       OnCreate:
+#         - Content:
+#             Fn::Base64: !Sub |
+#               set -e
+#               sudo -u sagemaker-user -i <<EOF
 
-  #             pip install --upgrade pip==20.1.1
-  #             pip install -r /home/ec2-user/SageMaker/RLlibEnv/requirements.txt
-  #             rm -rf src/package.egg-info
-  #             EOF
-  #     OnCreate:
-  #       - Content:
-  #           Fn::Base64: !Sub |
-  #             set -e
-  #             sudo -u ec2-user -i <<EOF
-
-  #             cd /home/ec2-user/SageMaker
-  #             aws s3 cp s3://${SolutionsS3BucketNamePrefix}-${AWS::Region}/${SolutionName}/source/ . --recursive
+#               cd /home/sagemaker-user/SageMaker
+#               aws s3 cp s3://${SolutionsS3BucketNamePrefix}-${AWS::Region}/${SolutionName}/source/ . --recursive
               
-  #             touch stack_outputs.json
-  #             echo '{' >> stack_outputs.json
-  #             echo '  "AwsAccountId": "${AWS::AccountId}",' >> stack_outputs.json
-  #             echo '  "AwsRegion": "${AWS::Region}",' >> stack_outputs.json
-  #             echo '  "S3Bucket": "${S3BucketName}",' >> stack_outputs.json
-  #             echo '  "SageMakerIamRoleArn": "${SageMakerIamRoleArn}",' >> stack_outputs.json
-  #             echo '  "SnakeAPI": "${SnakeAPI}",' >> stack_outputs.json
-  #             echo '  "EndPointS3Location": "s3://${SolutionsS3BucketNamePrefix}-${AWS::Region}/${SolutionName}/build/model-complete.tar.gz",' >> stack_outputs.json
-  #             echo '  "SagemakerEndPointName": "${SagemakerEndPointName}",' >> stack_outputs.json
-  #             echo '  "SagemakerTrainingInstanceType": "${SagemakerTrainingInstanceType}",' >> stack_outputs.json
-  #             echo '  "SagemakerInferenceInstanceType": "${SagemakerInferenceInstanceType}"' >> stack_outputs.json
-  #             echo '}' >> stack_outputs.json
+#               touch stack_outputs.json
+#               echo '{' >> stack_outputs.json
+#               echo '  "AwsAccountId": "${AWS::AccountId}",' >> stack_outputs.json
+#               echo '  "AwsRegion": "${AWS::Region}",' >> stack_outputs.json
+#               echo '  "S3Bucket": "${S3BucketName}",' >> stack_outputs.json
+#               echo '  "SageMakerIamRoleArn": "${SageMakerIamRoleArn}",' >> stack_outputs.json
+#               echo '  "SnakeAPI": "${SnakeAPI}",' >> stack_outputs.json
+#               echo '  "EndPointS3Location": "s3://${SolutionsS3BucketNamePrefix}-${AWS::Region}/${SolutionName}/build/model-complete.tar.gz",' >> stack_outputs.json
+#               echo '  "SagemakerEndPointName": "${SagemakerEndPointName}",' >> stack_outputs.json
+#               echo '  "SagemakerTrainingInstanceType": "${SagemakerTrainingInstanceType}",' >> stack_outputs.json
+#               echo '  "SagemakerInferenceInstanceType": "${SagemakerInferenceInstanceType}"' >> stack_outputs.json
+#               echo '}' >> stack_outputs.json
 
-  #             python set_kernelspec.py --notebook RLlibEnv/1_Introduction.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
-  #             python set_kernelspec.py --notebook RLlibEnv/2_PolicyTraining.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
-  #             python set_kernelspec.py --notebook RLlibEnv/3_HeuristicsDeveloper.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
+#               python set_kernelspec.py --notebook RLlibEnv/1_Introduction.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
+#               python set_kernelspec.py --notebook RLlibEnv/2_PolicyTraining.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
+#               python set_kernelspec.py --notebook RLlibEnv/3_HeuristicsDeveloper.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
               
-  #             EOF
-      
+#               EOF
+
+
+  attachLifecyclePolicyLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: This Lambda function handles creation logic that CF can't handle
+      Code:
+        S3Bucket: !Sub ${SolutionsS3BucketNamePrefix}-${AWS::Region}
+        S3Key: !Sub ${SolutionName}/build/LambdaLifeCycle.zip
+      Handler: index.handler
+      Role: !GetAtt 'attachLifecyclePolicyLambdaRole.Arn'
+      Runtime: python3.9
+      Timeout: 60
+
+  attachLifecyclePolicyLambdaCaller:
+    Type: Custom::EnvSetupCaller
+    Properties:
+      ServiceToken: !GetAtt attachLifecyclePolicyLambda.Arn
+      LifecycleConfigArns: !Ref LifeCycleConfig
+      DomainId: !Ref SageMakerStudioDomain
+      region: !Sub AWS::Region
+      solutionName: solutionNam
+      AccountId: !Sub AWS::AccountId
+      S3BucketName: S3BucketName
+      SageMakerIamRoleArn: SageMakerIamRoleArn
+      SnakeAPI: SnakeAPI
+      SagemakerEndPointName: SagemakerEndPointName
+      SagemakerTrainingInstanceType: SagemakerTrainingInstanceType
+      SagemakerInferenceInstanceType: SagemakerInferenceInstanceType
+
+  attachLifecyclePolicyLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: lambdaS3Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: '*'
+        - PolicyName: lambdaSageMakerPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:*
+                  - sagemaker:*
+                Resource: '*'
+        - PolicyName: lambdaLogsCreatePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+        - PolicyName: lambdaLogPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+        - PolicyName: lambdaS3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:TagResource
+                  - tag:TagResources
+                Resource: '*'
+
 Outputs:
   # SourceEditionInNotebook:
   #   Description: "Open Jupyter IDE. This authenticate you against Jupyter."
