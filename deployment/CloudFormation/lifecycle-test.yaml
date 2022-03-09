@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "(SA0001) - sagemaker-battlesnake-ai: Solution for training and deploying a Battlesnake AI using Amazon SageMaker Studio. Version 1"
+
+
+
+Resources:
+# Add the go to sleep thing to this for kernels.
+  LifeCycleConfig:
+    Type: AWS::SageMaker::NotebookInstanceLifecycleConfig
+    Properties:
+      OnStart:
+        - Content:
+            Fn::Base64: !Sub |
+              cd /home/sagemaker-user
+              sudo -u sagemaker-user -i <<EOF
+              pip install --upgrade pip
+              pip install -r /home/sagemaker-user/SageMaker/RLlibEnv/requirements.txt
+              EOF
+      OnCreate:
+        - Content:
+            Fn::Base64: !Sub |
+              set -e
+              sudo -u sagemaker-user -i <<EOF
+
+              cd /home/sagemaker-user/SageMaker
+              aws s3 cp s3://SolutionsS3BucketNamePrefix-AWS::Region/SolutionName/source/ . --recursive
+              
+              touch stack_outputs.json
+              echo '{' >> stack_outputs.json
+              echo '  "AwsAccountId": "AWS::AccountId",' >> stack_outputs.json
+              echo '  "AwsRegion": "AWS::Region",' >> stack_outputs.json
+              echo '  "S3Bucket": "S3BucketName",' >> stack_outputs.json
+              echo '  "SageMakerIamRoleArn": "SageMakerIamRoleArn",' >> stack_outputs.json
+              echo '  "SnakeAPI": "SnakeAPI",' >> stack_outputs.json
+              echo '  "EndPointS3Location": "s3://SolutionsS3BucketNamePrefix-AWS::Region/SolutionName/build/model-complete.tar.gz",' >> stack_outputs.json
+              echo '  "SagemakerEndPointName": "SagemakerEndPointName",' >> stack_outputs.json
+              echo '  "SagemakerTrainingInstanceType": "SagemakerTrainingInstanceType",' >> stack_outputs.json
+              echo '  "SagemakerInferenceInstanceType": "SagemakerInferenceInstanceType"' >> stack_outputs.json
+              echo '' >> stack_outputs.json
+
+              python set_kernelspec.py --notebook RLlibEnv/1_Introduction.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
+              python set_kernelspec.py --notebook RLlibEnv/2_PolicyTraining.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
+              python set_kernelspec.py --notebook RLlibEnv/3_HeuristicsDeveloper.ipynb --display-name conda_tensorflow2_p36 --kernel conda_tensorflow2_p36
+              
+              EOF

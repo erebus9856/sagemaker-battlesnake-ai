@@ -727,7 +727,7 @@ Resources:
       Code:
         S3Bucket: !Sub ${SolutionsS3BucketNamePrefix}-${AWS::Region}
         S3Key: !Sub ${SolutionName}/build/LambdaLifeCycle.zip
-      Handler: index.handler
+      Handler: lambda.handler
       Role: !GetAtt 'attachLifecyclePolicyLambdaRole.Arn'
       Runtime: python3.9
       Timeout: 60
@@ -736,17 +736,16 @@ Resources:
     Type: Custom::EnvSetupCaller
     Properties:
       ServiceToken: !GetAtt attachLifecyclePolicyLambda.Arn
-      LifecycleConfigArns: !Ref LifeCycleConfig
       DomainId: !Ref SageMakerStudioDomain
       region: !Sub AWS::Region
-      solutionName: solutionNam
+      solutionName: !Ref SolutionName
       AccountId: !Sub AWS::AccountId
-      S3BucketName: S3BucketName
+      S3BucketName: !Ref S3BucketName
       SageMakerIamRoleArn: SageMakerIamRoleArn
-      SnakeAPI: SnakeAPI
-      SagemakerEndPointName: SagemakerEndPointName
-      SagemakerTrainingInstanceType: SagemakerTrainingInstanceType
-      SagemakerInferenceInstanceType: SagemakerInferenceInstanceType
+      SnakeAPI: !Ref SnakeAPI
+      SagemakerEndPointName: !Ref SagemakerEndPointName
+      SagemakerTrainingInstanceType: !Ref SagemakerTrainingInstanceType
+      SagemakerInferenceInstanceType: !Ref SagemakerInferenceInstanceType
 
   attachLifecyclePolicyLambdaRole:
     Type: AWS::IAM::Role
